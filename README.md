@@ -22,7 +22,7 @@
 ## Demo of iPCL-R
 
 <div align="center">
-<img src="./iPCL-R-1.gif" width="90%" alt="AiEDA" />
+<img src="./iPCL-R-1.gif" width="100%" alt="AiEDA" />
 <h3> A chip layout generation demo by iPCL-R </h3>
 </div>
 
