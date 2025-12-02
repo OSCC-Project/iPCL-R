@@ -1,0 +1,4 @@
+[submodule "third_party/aieda"]
+	path = third_party/aieda
+	url = git@gitee.com:ieda-iai/aieda_fork.git
+	branch = dev

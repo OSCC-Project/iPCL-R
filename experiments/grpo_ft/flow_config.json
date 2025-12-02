@@ -1,0 +1,125 @@
+{
+    "_description": "Simplified Flow Pipeline Configuration",
+    "_version": "2.0",
+    "_structure": "consolidated",
+    "_note": "All stage configurations consolidated into single file",
+    "dataset": {
+        "source": "hub",
+        "hub_id": "AiEDA/iPCL-R",
+        "train_split": "train",
+        "validation_split": "validation",
+        "train_local_dir": "/mnt/local_data1/liweiguo/experiments/model_size_comparison/work_dir/Large-DecimalWordLevel/data_synthesis",
+        "eval_local_dir": "/mnt/local_data1/liweiguo/experiments/model_size_comparison/work_dir/Large-DecimalWordLevel/stage_evaluation/evaluation_dataset"
+    },
+    "tokenization": {
+        "paths": {
+            "token_dataset_dir": "/mnt/local_data1/liweiguo/experiments/model_size_comparison/work_dir/Large-DecimalWordLevel/stage_tokenization/token_dataset",
+            "tokenizer_save_dir": "/mnt/local_data1/liweiguo/experiments/model_size_comparison/work_dir/Large-DecimalWordLevel/stage_tokenization/tokenizer",
+            "output_metadata_path": "/mnt/local_data1/liweiguo/experiments/model_size_comparison/work_dir/Large-DecimalWordLevel/stage_tokenization/output_metadata.json"
+        },
+        "workflow": {
+            "tokenizer_algorithm": "DecimalWordLevel",
+            "target_vocab_size": 1000,
+            "max_sequence_length": 512,
+            "save_metadata": true
+        },
+        "performance": {
+            "num_workers": 16,
+            "batch_size": 1000
+        },
+        "advanced": {
+            "overlap_info_require": false,
+            "overlap_top_k": 3,
+            "connected_info_require": false,
+            "connected_top_k": 3,
+            "use_coord_sorted_input": true
+        },
+        "log_level": "INFO"
+    },
+    "training": {
+        "paths": {
+            "split_dataset_dir": "/mnt/local_data1/liweiguo/experiments/model_size_comparison/work_dir/Large-DecimalWordLevel/stage_training/split_dataset",
+            "model_save_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/training",
+            "logging_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/logs"
+        },
+        "model": {
+            "hidden_size": 1024,
+            "intermediate_size": 4096,
+            "num_hidden_layers": 12,
+            "num_attention_heads": 16,
+            "num_key_value_heads": 8,
+            "head_dim": 64,
+            "max_position_embeddings": 256,
+            "sliding_window": 128,
+            "dropout_rate": 0.1
+        },
+        "hyperparameters": {
+            "max_src_len": 128,
+            "max_tgt_len": 256,
+            "train_split_ratio": 0.9,
+            "num_train_epochs": 100,
+            "batch_size_per_device": 32,
+            "gradient_accumulation_steps": 1,
+            "learning_rate": 0.0001,
+            "weight_decay": 0.005,
+            "warmup_ratio": 0.05,
+            "max_grad_norm": 1.0,
+            "optimizer_type": "adafactor",
+            "scheduler_type": "adafactor",
+            "eval_strategy": "epoch",
+            "save_strategy": "epoch",
+            "early_stopping_patience": 3,
+            "logging_strategy": "steps",
+            "logging_steps": 100,
+            "seed": 42
+        },
+        "performance": {
+            "num_workers": 16,
+            "batch_size": 1000,
+            "dataloader_num_workers": 16,
+            "dataloader_pin_memory": true,
+            "resume_from_checkpoint": false
+        },
+        "log_level": "INFO"
+    },
+    "evaluation": {
+        "paths": {
+            "output_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/stage_evaluation",
+            "metrics_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/stage_evaluation/metrics",
+            "plots_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/stage_evaluation/plots",
+            "logging_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/stage_evaluation/logs"
+        },
+        "generation": {
+            "max_new_tokens": 512,
+            "num_beams": 4,
+            "do_sample": false,
+            "temperature": 0.9,
+            "top_p": 1.0,
+            "top_k": 50,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "early_stopping": true
+        },
+        "metrics": {
+            "calculate_rouge": true,
+            "calculate_bleu": true,
+            "calculate_exact_match": true,
+            "calculate_domain_metrics": true,
+            "use_coordinate_parsing": true,
+            "use_tree_structure_analysis": true,
+            "use_routing_metrics": true
+        },
+        "performance": {
+            "num_workers": 16,
+            "batch_size": 32,
+            "dataloader_num_workers": 16,
+            "dataloader_pin_memory": true
+        },
+        "output": {
+            "save_predictions": true,
+            "save_metrics": true,
+            "num_demo_examples": 5
+        },
+        "log_level": "INFO"
+    }
+}

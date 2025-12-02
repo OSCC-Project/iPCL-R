@@ -1,0 +1,30 @@
+# torch
+# torchvision
+# torchaudio
+transformers
+lion-pytorch
+deepspeed
+tensorboard
+accelerate
+tokenizers
+datasets
+trl
+sentencepiece
+networkx
+pandas
+tqdm
+PyYAML
+orjson
+plotly
+matplotlib
+scienceplots
+rtree
+joblib
+numba
+scikit-learn
+seaborn
+scipy
+umap-learn
+adjustText
+wandb
+liger-kernel
