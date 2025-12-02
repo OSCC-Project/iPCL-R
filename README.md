@@ -27,7 +27,7 @@
 ## Project Overview
 
 <div align="center">
-<img src="./figs/framework.png" width="100%" alt="iPCL-R Framework" />
+<img src="./figs/framework.jpg" width="100%" alt="iPCL-R Framework" />
 <h3> The framework of iPCL-R.
     (a) Dataset. (b) Symbolic system. (c) Pre-training. (d) Inference. </h3>
 </div>
