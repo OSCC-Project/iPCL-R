@@ -41,11 +41,11 @@ iPCL-R addresses the challenge of automated routing pattern generation in chip d
   - [Key Innovation](#key-innovation)
 - [Architecture](#architecture)
 - [Core Modules](#core-modules)
-  - [Data Synthesis Module](#data-synthesis-module)
   - [Flow Module](#flow-module)
     - [Stage 1: Tokenization](#stage-1-tokenization)
     - [Stage 2: Training](#stage-2-training)
     - [Stage 3: Evaluation](#stage-3-evaluation)
+  - [Data Synthesis Module](#data-synthesis-module)
   - [Experiments Module](#experiments-module)
   - [AiEDA Third-Party Module](#aieda-third-party-module)
 - [Quick Start](#quick-start)
@@ -78,22 +78,6 @@ iPCL-R/
 
 ## Core Modules
 
-### Data Synthesis Module
-**Purpose**: Convert EDA design data into large model learning-ready formats
-
-**Key Components**:
-- **MetadataTracker & DataGenerator**: Base infrastructure for data generation with Parquet output
-- **NetPatternProcessor**: Processes wire routing patterns and calculates directions  
-- **NetGraphProcessor**: Converts routing networks into NetworkX graphs
-- **DesignGraphProcessor**: Creates design-level graphs with spatial overlap detection
-- **DatasetAggregator**: Consolidates data into HuggingFace Dataset format
-
-**Data Types Generated**:
-- `net_seqs`: Network sequence representations with driver/load information
-- `pin2pin_pattern_seqs`: Pin-to-pin routing pattern sequences  
-- `pin2pin_loc_seqs`: Spatial location sequences for routing paths
-- `design_graph`: Design-level connectivity and overlap graphs
-
 ### Flow Module  
 **Purpose**: Complete 3-stage pipeline for routing pattern generation
 
@@ -115,6 +99,25 @@ iPCL-R/
 - **Multi-metric Assessment**: NLP metrics (ROUGE, BLEU) + routing-specific (RED)
 - **Validation Pipeline**: Coordinate parsing, tree structure analysis
 - **EDA Integration**: DEF format output for industry tool verification
+
+### Data Synthesis Module
+**Purpose**: Convert EDA design data into large model learning-ready formats
+
+**Key Components**:
+- **MetadataTracker & DataGenerator**: Base infrastructure for data generation with Parquet output
+- **NetPatternProcessor**: Processes wire routing patterns and calculates directions  
+- **NetGraphProcessor**: Converts routing networks into NetworkX graphs
+- **DesignGraphProcessor**: Creates design-level graphs with spatial overlap detection
+- **DatasetAggregator**: Consolidates data into HuggingFace Dataset format
+
+**Data Types Generated**:
+- `net_seqs`: Network sequence representations with driver/load information
+- `pin2pin_pattern_seqs`: Pin-to-pin routing pattern sequences  
+- `pin2pin_loc_seqs`: Spatial location sequences for routing paths
+- `design_graph`: Design-level connectivity and overlap graphs
+
+**Ready-made online datasets**:
+- [iPCL-R Dataset](https://huggingface.co/datasets/AiEDA/iPCL-R) on HuggingFace
 
 ### Experiments Module
 **Purpose**: Validation and optimization studies for the pipeline
