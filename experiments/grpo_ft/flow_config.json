@@ -39,8 +39,8 @@
     "training": {
         "paths": {
             "split_dataset_dir": "/mnt/local_data1/liweiguo/experiments/model_size_comparison/work_dir/Large-DecimalWordLevel/stage_training/split_dataset",
-            "model_save_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/training",
-            "logging_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/logs"
+            "model_save_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/wl/training",
+            "logging_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/wl/logs"
         },
         "model": {
             "hidden_size": 1024,
@@ -84,10 +84,10 @@
     },
     "evaluation": {
         "paths": {
-            "output_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/stage_evaluation",
-            "metrics_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/stage_evaluation/metrics",
-            "plots_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/stage_evaluation/plots",
-            "logging_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/stage_evaluation/logs"
+            "output_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/wl/stage_evaluation",
+            "metrics_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/wl/stage_evaluation/metrics",
+            "plots_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/wl/stage_evaluation/plots",
+            "logging_dir": "/mnt/local_data1/liweiguo/experiments/grpo_ft/wl/stage_evaluation/logs"
         },
         "generation": {
             "max_new_tokens": 512,
