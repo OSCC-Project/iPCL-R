@@ -27,11 +27,6 @@ from flow.utils import setup_logging
 
 from .init_env import create_alias
 
-FIG_SIZE = (16, 14)
-FONT_SIZE = 36
-LEGEND_SIZE = 36
-MARKER_SIZE = 32
-
 
 def extract_metadata_set(
     work_dir: Path,
@@ -64,30 +59,51 @@ def extract_metadata_set(
     return metadata_set
 
 
-def plot_symbol_frequency_ranking(metadata_set: Dict[str, dict], output_dir: Path):
+def plot_symbol_frequency_ranking(
+    metadata_set: Dict[str, dict],
+    output_dir: Path,
+    fig_size: Tuple[int, int] = (16, 14),
+    font_size: int = 36,
+    legend_size: int = 36,
+    marker_size: int = 32,
+):
     """Plot symbol frequency ranking for all tokenization methods"""
-    fig, ax = plt.subplots(figsize=FIG_SIZE)
+    fig, ax = plt.subplots(figsize=fig_size)
 
     # Get unified style mapping for consistent colors and markers
     method_color_mapping, vocab_style_mapping = get_unified_style_mapping(metadata_set)
 
     # 1. Plot DecimalWordLevel first (highest priority)
     plot_method1_symbol_frequency(
-        ax, metadata_set, method_color_mapping, vocab_style_mapping
+        ax,
+        metadata_set,
+        method_color_mapping,
+        vocab_style_mapping,
+        marker_size=marker_size,
     )
 
     # 2. Plot BPE methods group
     plot_bpe_symbol_frequency_group(
-        ax, metadata_set, method_color_mapping, vocab_style_mapping
+        ax,
+        metadata_set,
+        method_color_mapping,
+        vocab_style_mapping,
+        marker_size=marker_size,
     )
 
     # 3. Plot BBPE methods group
     plot_bbpe_symbol_frequency_group(
-        ax, metadata_set, method_color_mapping, vocab_style_mapping
+        ax,
+        metadata_set,
+        method_color_mapping,
+        vocab_style_mapping,
+        marker_size=marker_size,
     )
 
     # Configure plot appearance
-    configure_symbol_frequency_plot(fig, ax)
+    configure_symbol_frequency_plot(
+        fig, ax, font_size=font_size, legend_size=legend_size
+    )
 
     # Save plot
     output_path = output_dir / "symbol_frequency_rank.pdf"
@@ -246,6 +262,7 @@ def plot_method1_symbol_frequency(
     metadata_set: Dict[str, dict],
     method_color_mapping: Dict,
     vocab_style_mapping: Dict,
+    marker_size: int,
 ):
     """Plot DecimalWordLevel symbol frequency ranking"""
     if "DecimalWordLevel" not in metadata_set:
@@ -275,7 +292,7 @@ def plot_method1_symbol_frequency(
         linewidth=3.0,
         marker=marker,
         linestyle="--",
-        markersize=MARKER_SIZE,
+        markersize=marker_size,
         markeredgewidth=1,
         markeredgecolor=color,
         markevery=marker_positions,
@@ -289,6 +306,7 @@ def plot_bpe_symbol_frequency_group(
     metadata_set: Dict[str, dict],
     method_color_mapping: Dict,
     vocab_style_mapping: Dict,
+    marker_size: int,
 ):
     """Plot BPE methods group: mean lines, confidence bands, then individual methods"""
     bpe_aliases = [
@@ -314,7 +332,12 @@ def plot_bpe_symbol_frequency_group(
 
     # Plot individual BPE methods
     plot_individual_symbol_frequency_methods(
-        ax, metadata_set, bpe_aliases, method_color_mapping, vocab_style_mapping
+        ax,
+        metadata_set,
+        bpe_aliases,
+        method_color_mapping,
+        vocab_style_mapping,
+        marker_size=marker_size,
     )
 
 
@@ -323,6 +346,7 @@ def plot_bbpe_symbol_frequency_group(
     metadata_set: Dict[str, dict],
     method_color_mapping: Dict,
     vocab_style_mapping: Dict,
+    marker_size: int,
 ):
     """Plot BBPE methods group: mean lines, confidence bands, then individual methods"""
     bbpe_aliases = [alias for alias in metadata_set.keys() if "BBPE" in alias]
@@ -346,7 +370,12 @@ def plot_bbpe_symbol_frequency_group(
 
     # Plot individual BBPE methods
     plot_individual_symbol_frequency_methods(
-        ax, metadata_set, bbpe_aliases, method_color_mapping, vocab_style_mapping
+        ax,
+        metadata_set,
+        bbpe_aliases,
+        method_color_mapping,
+        vocab_style_mapping,
+        marker_size=marker_size,
     )
 
 
@@ -440,6 +469,7 @@ def plot_individual_symbol_frequency_methods(
     method_aliases: List[str],
     method_color_mapping: Dict,
     vocab_style_mapping: Dict,
+    marker_size: int,
 ):
     """Plot individual symbol frequency method lines"""
     for alias in method_aliases:
@@ -471,7 +501,7 @@ def plot_individual_symbol_frequency_methods(
             linewidth=3.0,
             marker=marker,
             linestyle="--",
-            markersize=MARKER_SIZE,
+            markersize=marker_size,
             markeredgewidth=1,
             markeredgecolor=color,
             markevery=marker_positions,
@@ -503,16 +533,18 @@ def calculate_uniform_marker_positions(
     return marker_indices
 
 
-def configure_symbol_frequency_plot(fig, ax):
+def configure_symbol_frequency_plot(
+    fig, ax, font_size: int = 36, legend_size: int = 36
+):
     """Configure the appearance of symbol frequency ranking plot"""
     # Labels and scales
-    ax.set_xlabel(r"Cumulative Percentage (\%)", fontsize=FONT_SIZE, fontweight="bold")
-    ax.set_ylabel("Frequency", fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_xlabel(r"Cumulative Percentage (\%)", fontsize=font_size, fontweight="bold")
+    ax.set_ylabel("Frequency", fontsize=font_size, fontweight="bold")
     ax.set_yscale("log")  # Set y-axis to log scale
 
     # Grid and axis styling
     ax.grid(True, linestyle="--")
-    ax.tick_params(axis="both", labelsize=FONT_SIZE)
+    ax.tick_params(axis="both", labelsize=font_size)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
@@ -523,7 +555,7 @@ def configure_symbol_frequency_plot(fig, ax):
         frameon=True,
         fancybox=True,
         shadow=True,
-        fontsize=LEGEND_SIZE,
+        fontsize=legend_size,
     )
     legend.get_frame().set_facecolor("white")
     legend.get_frame().set_alpha(0.9)

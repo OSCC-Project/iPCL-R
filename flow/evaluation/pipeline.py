@@ -31,35 +31,7 @@ from rouge_score import rouge_scorer
 from flow.config import FlowConfig
 from flow.tokenization import Node, UnifiedTokenizer
 from flow.utils import CoordinatePoint
-
-FIG_SIZE = (16, 10)
-FONT_SIZE = 56
-LEGEND_SIZE = 48
-LINE_WIDTH = 4
-COLOR_PALETTE: List[tuple[float, float, float]] = [
-    (249 / 255, 199 / 255, 79 / 255),
-    (196 / 255, 194 / 255, 94 / 255),
-    (144 / 255, 190 / 255, 109 / 255),
-    (106 / 255, 180 / 255, 124 / 255),
-    (67 / 255, 170 / 255, 139 / 255),
-    (77 / 255, 144 / 255, 142 / 255),
-    (87 / 255, 117 / 255, 144 / 255),
-]
-
-
-def _palette_slice(count: int) -> List[tuple[float, float, float]]:
-    if count <= 0:
-        return []
-    palette_len = len(COLOR_PALETTE)
-    if count >= palette_len:
-        return [COLOR_PALETTE[i % palette_len] for i in range(count)]
-    if count == 1:
-        return [COLOR_PALETTE[0]]
-    indices = [
-        int(round(i * (palette_len - 1) / (count - 1)))
-        for i in range(count)
-    ]
-    return [COLOR_PALETTE[idx] for idx in indices]
+from flow.utils.plot_utils import palette_slice
 
 
 class EvaluationPipeline:
@@ -2194,10 +2166,13 @@ def plot_PDF(
     clip_long_tail: bool = True,
     min_clip_percentage: float = 0.0,
     max_clip_percentage: float = 95.0,
+    fig_size: Tuple[int, int] = (16, 10),
+    font_size: int = 56,
+    legend_size: int = 48,
 ):
-    plt.figure(figsize=FIG_SIZE, dpi=300)
+    plt.figure(figsize=fig_size, dpi=300)
 
-    colors = _palette_slice(len(data))
+    colors = palette_slice(len(data))
     for i, (label, values) in enumerate(data.items()):
         sns.histplot(
             values,
@@ -2217,20 +2192,20 @@ def plot_PDF(
         )
         plt.xlim(min_val_for_clip, max_val_for_clip)
 
-    plt.xlabel(f"{alias}", fontsize=FONT_SIZE)
-    plt.ylabel("Density", fontsize=FONT_SIZE)
-    plt.legend(frameon=False, fontsize=LEGEND_SIZE)
+    plt.xlabel(f"{alias}", fontsize=font_size)
+    plt.ylabel("Density", fontsize=font_size)
+    plt.legend(frameon=False, fontsize=legend_size)
 
     # Set tick font size
-    plt.xticks(fontsize=FONT_SIZE)
-    plt.yticks(fontsize=FONT_SIZE)
+    plt.xticks(fontsize=font_size)
+    plt.yticks(fontsize=font_size)
 
     # Set scientific notation font size
     ax = plt.gca()
-    ax.tick_params(axis="both", which="major", labelsize=FONT_SIZE)
+    ax.tick_params(axis="both", which="major", labelsize=font_size)
     # Set offset text (scientific notation) font size
-    ax.xaxis.offsetText.set_fontsize(FONT_SIZE)
-    ax.yaxis.offsetText.set_fontsize(FONT_SIZE)
+    ax.xaxis.offsetText.set_fontsize(font_size)
+    ax.yaxis.offsetText.set_fontsize(font_size)
 
     # Hide zero ticks to prevent overlap
     # Check if both x and y axes have 0 ticks
@@ -2259,22 +2234,26 @@ def plot_KDE(
     clip_long_tail: bool = True,
     min_clip_percentage: float = 0.0,
     max_clip_percentage: float = 95.0,
+    fig_size: Tuple[int, int] = (16, 10),
+    font_size: int = 56,
+    legend_size: int = 48,
+    line_width: int = 4,
 ):
-    plt.figure(figsize=FIG_SIZE, dpi=300)
+    plt.figure(figsize=fig_size, dpi=300)
 
-    colors = _palette_slice(len(data_dict))
+    colors = palette_slice(len(data_dict))
     for i, (label, values) in enumerate(data_dict.items()):
         mean, std = np.mean(values), np.std(values)
         sns.kdeplot(
             values,
             color=colors[i],
-            lw=LINE_WIDTH,
+            lw=line_width,
             fill=True,
             alpha=0.05,
             linestyle="--",
             label=rf"{label} ($\mu$={mean:.2f}, $\sigma$={std:.2f})",
         )
-        # plt.axvline(mean, color=f"C{i}", linestyle="--", lw=LINE_WIDTH, alpha=0.85)
+        # plt.axvline(mean, color=f"C{i}", linestyle="--", lw=line_width, alpha=0.85)
 
     if clip_long_tail:
         min_val_for_clip = min(
@@ -2285,9 +2264,9 @@ def plot_KDE(
         )
         plt.xlim(min_val_for_clip, max_val_for_clip)
 
-    plt.xlabel(f"{alias}", fontsize=FONT_SIZE)
-    plt.ylabel("Density", fontsize=FONT_SIZE)
-    legends = plt.legend(frameon=False, fontsize=LEGEND_SIZE)
+    plt.xlabel(f"{alias}", fontsize=font_size)
+    plt.ylabel("Density", fontsize=font_size)
+    legends = plt.legend(frameon=False, fontsize=legend_size)
     for legend in legends.legend_handles:
         legend.set_linestyle("-")
 
@@ -2300,14 +2279,14 @@ def plot_KDE(
         ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
     # Set tick font size
-    plt.xticks(fontsize=FONT_SIZE)
-    plt.yticks(fontsize=FONT_SIZE)
+    plt.xticks(fontsize=font_size)
+    plt.yticks(fontsize=font_size)
 
     # Set scientific notation font size
-    ax.tick_params(axis="both", which="major", labelsize=FONT_SIZE)
+    ax.tick_params(axis="both", which="major", labelsize=font_size)
     # Set offset text (scientific notation) font size
-    ax.xaxis.offsetText.set_fontsize(FONT_SIZE)
-    ax.yaxis.offsetText.set_fontsize(FONT_SIZE)
+    ax.xaxis.offsetText.set_fontsize(font_size)
+    ax.yaxis.offsetText.set_fontsize(font_size)
 
     # Hide zero ticks to prevent overlap
     # Check if both x and y axes have 0 ticks
@@ -2336,17 +2315,21 @@ def plot_KDE_cumulative(
     clip_long_tail: bool = True,
     min_clip_percentage: float = 0.0,
     max_clip_percentage: float = 95.0,
+    fig_size: Tuple[int, int] = (16, 10),
+    font_size: int = 56,
+    legend_size: int = 48,
+    line_width: int = 4,
 ):
-    plt.figure(figsize=FIG_SIZE, dpi=300)
+    plt.figure(figsize=fig_size, dpi=300)
 
-    colors = _palette_slice(len(data_dict))
+    colors = palette_slice(len(data_dict))
     for i, (label, values) in enumerate(data_dict.items()):
         mean, std = np.mean(values), np.std(values)
         sns.kdeplot(
             values,
             cumulative=True,
             color=colors[i],
-            lw=LINE_WIDTH,
+            lw=line_width,
             label=rf"{label} ($\mu$={mean:.2f}, $\sigma$={std:.2f})",
         )
 
@@ -2359,9 +2342,9 @@ def plot_KDE_cumulative(
         )
         plt.xlim(min_val_for_clip, max_val_for_clip)
 
-    plt.xlabel(f"{alias}", fontsize=FONT_SIZE)
-    plt.ylabel("Cumulative Density", fontsize=FONT_SIZE)
-    plt.legend(frameon=False, fontsize=LEGEND_SIZE)
+    plt.xlabel(f"{alias}", fontsize=font_size)
+    plt.ylabel("Cumulative Density", fontsize=font_size)
+    plt.legend(frameon=False, fontsize=legend_size)
 
     ax = plt.gca()
     max_val = max(v.max() for v in data_dict.values())
@@ -2372,14 +2355,14 @@ def plot_KDE_cumulative(
         ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
     # Set tick font size
-    plt.xticks(fontsize=FONT_SIZE)
-    plt.yticks(fontsize=FONT_SIZE)
+    plt.xticks(fontsize=font_size)
+    plt.yticks(fontsize=font_size)
 
     # Set scientific notation font size
-    ax.tick_params(axis="both", which="major", labelsize=FONT_SIZE)
+    ax.tick_params(axis="both", which="major", labelsize=font_size)
     # Set offset text (scientific notation) font size
-    ax.xaxis.offsetText.set_fontsize(FONT_SIZE)
-    ax.yaxis.offsetText.set_fontsize(FONT_SIZE)
+    ax.xaxis.offsetText.set_fontsize(font_size)
+    ax.yaxis.offsetText.set_fontsize(font_size)
 
     # Hide zero ticks to prevent overlap
     # Check if both x and y axes have 0 ticks
@@ -2408,15 +2391,19 @@ def plot_CDF(
     clip_long_tail: bool = True,
     min_clip_percentage: float = 0.0,
     max_clip_percentage: float = 95.0,
+    fig_size: Tuple[int, int] = (16, 10),
+    font_size: int = 56,
+    legend_size: int = 48,
+    line_width: int = 4,
 ):
-    plt.figure(figsize=FIG_SIZE, dpi=300)
+    plt.figure(figsize=fig_size, dpi=300)
 
-    colors = _palette_slice(len(data_dict))
+    colors = palette_slice(len(data_dict))
     for i, (label, values) in enumerate(data_dict.items()):
         sns.ecdfplot(
             values,
             color=colors[i],
-            lw=LINE_WIDTH,
+            lw=line_width,
             label=label,
         )
 
@@ -2429,20 +2416,20 @@ def plot_CDF(
         )
         plt.xlim(min_val_for_clip, max_val_for_clip)
 
-    plt.xlabel(f"{alias}", fontsize=FONT_SIZE)
-    plt.ylabel("Cumulative Density", fontsize=FONT_SIZE)
-    plt.legend(frameon=False, fontsize=LEGEND_SIZE)
+    plt.xlabel(f"{alias}", fontsize=font_size)
+    plt.ylabel("Cumulative Density", fontsize=font_size)
+    plt.legend(frameon=False, fontsize=legend_size)
 
     # Set tick font size
-    plt.xticks(fontsize=FONT_SIZE)
-    plt.yticks(fontsize=FONT_SIZE)
+    plt.xticks(fontsize=font_size)
+    plt.yticks(fontsize=font_size)
 
     # Set scientific notation font size
     ax = plt.gca()
-    ax.tick_params(axis="both", which="major", labelsize=FONT_SIZE)
+    ax.tick_params(axis="both", which="major", labelsize=font_size)
     # Set offset text (scientific notation) font size
-    ax.xaxis.offsetText.set_fontsize(FONT_SIZE)
-    ax.yaxis.offsetText.set_fontsize(FONT_SIZE)
+    ax.xaxis.offsetText.set_fontsize(font_size)
+    ax.yaxis.offsetText.set_fontsize(font_size)
 
     # Hide zero ticks to prevent overlap
     # Check if both x and y axes have 0 ticks

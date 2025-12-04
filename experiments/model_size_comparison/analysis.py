@@ -27,6 +27,7 @@ from matplotlib.patches import Patch
 from safetensors import safe_open
 
 from flow.utils import setup_logging
+from flow.utils.plot_utils import COLOR_PALETTE
 
 if scienceplots:
     plt.style.use(["science"])
@@ -127,17 +128,6 @@ CONFIG_VALUE_PATHS: Dict[str, List[str]] = {
         "encoder.query_pre_attn_scalar",
     ],
 }
-
-COLOR_PALETTE: List[tuple[float, float, float]] = [
-    (249 / 255, 199 / 255, 79 / 255),
-    (196 / 255, 194 / 255, 94 / 255),
-    (144 / 255, 190 / 255, 109 / 255),
-    (106 / 255, 180 / 255, 124 / 255),
-    (67 / 255, 170 / 255, 139 / 255),
-    (77 / 255, 144 / 255, 142 / 255),
-    (87 / 255, 117 / 255, 144 / 255),
-]
-
 
 def _base_type_name(value: object) -> str:
     text = str(value)

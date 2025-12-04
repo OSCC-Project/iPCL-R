@@ -208,7 +208,9 @@ class SymbolAnalyzer:
             try:
                 output_paths = self.embedding_visualizer.plot_from_high_dim_files()
                 if output_paths:
-                    logging.info("Plot-only mode with update-reduce completed successfully!")
+                    logging.info(
+                        "Plot-only mode with update-reduce completed successfully!"
+                    )
                     logging.info(f"Generated {len(output_paths)} plots")
                 else:
                     logging.error("No plots were generated")
@@ -228,7 +230,6 @@ class SymbolAnalyzer:
             except Exception as e:
                 logging.error(f"Plot generation failed: {e}")
                 raise
-
 
     def _generate_final_report(self, all_results: dict) -> None:
         """

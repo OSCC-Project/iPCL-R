@@ -21,17 +21,10 @@ from datasets import Dataset
 from transformers import AutoTokenizer
 
 from flow import FlowConfig
+from flow.utils.plot_utils import COLOR_PALETTE, palette_slice
 
 if scienceplots:
-    plt.style.use(["science"])
-    import matplotlib as mpl
-
-    mpl.rcParams["text.usetex"] = False
-    mpl.rcParams["font.family"] = "DejaVu Sans"
-
-FIG_SIZE = (8, 8)
-TEXT_SIZE = 24
-FONT_SIZE = 36
+    plt.style.use(["science", "no-latex"])
 
 
 class TokenizerComparator:
@@ -43,6 +36,10 @@ class TokenizerComparator:
         domain_tokenizer_path: Union[str, Path],
         output_dir: Path,
         plot_only: bool = False,
+        fig_size: tuple[int, int] = (8, 8),
+        text_size: int = 24,
+        font_size: int = 36,
+        palette: tuple = COLOR_PALETTE,
     ):
         """
         Initialize tokenizer comparator
@@ -57,6 +54,10 @@ class TokenizerComparator:
         self.domain_tokenizer_path = Path(domain_tokenizer_path)
         self.output_dir = Path(output_dir)
         self.plot_only = plot_only
+        self.fig_size = fig_size
+        self.text_size = text_size
+        self.font_size = font_size
+        self.palette = palette_slice(len(palette), palette)
 
         # Initialize tokenizers
         self.human_tokenizer = None
@@ -391,6 +392,7 @@ class TokenizerComparator:
         self,
         token_freq: Dict[str, int],
         output_path: Path,
+        cmap_name: str,
         title: str,
     ) -> None:
         """
@@ -401,6 +403,9 @@ class TokenizerComparator:
             output_path: Path to save the plot
             title: Title for the plot
         """
+        import matplotlib as mpl
+
+        mpl.rcParams["text.usetex"] = False
         # Drop tokens with '<' or '>' in them
         token_freq = {
             k: v for k, v in token_freq.items() if "<" not in k and ">" not in k
@@ -418,10 +423,10 @@ class TokenizerComparator:
         frequencies = [t[1] for t in sorted_tokens]
 
         # Create figure
-        fig, ax = plt.subplots(figsize=FIG_SIZE)
+        fig, ax = plt.subplots(figsize=self.fig_size)
 
-        # Create bars using the first color from palette
-        cmap = plt.get_cmap("GnBu")
+        # Create bars with shared palette for consistency
+        cmap = plt.get_cmap(cmap_name)
         colors = [cmap(0.75 - i / 2 / len(tokens)) for i in range(len(tokens))]
         bars = ax.bar(
             range(len(tokens)),
@@ -441,13 +446,19 @@ class TokenizerComparator:
                 ha="center",
                 va="bottom",
                 rotation=45,
-                fontsize=TEXT_SIZE,
+                fontsize=self.text_size,
             )
 
         # Customize plot
         ax.set_yticklabels([""])
         ax.set_xticks(range(len(tokens)))
-        ax.set_xticklabels(tokens, rotation=75, ha="center", fontsize=FONT_SIZE)
+        ax.set_xticklabels(
+            tokens,
+            rotation=75,
+            ha="center",
+            fontfamily="DejaVu Sans",
+            fontsize=self.font_size,
+        )
         for spine in ax.spines.values():
             spine.set_visible(False)
         # Save plot
@@ -455,6 +466,8 @@ class TokenizerComparator:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
+
+        plt.style.use(["science", "no-latex"])
         logging.info(f"Saved top-10 frequency plot to {output_path}")
 
     def plot_frequencies_from_results(self, results: Dict[str, Any]) -> None:
@@ -471,7 +484,10 @@ class TokenizerComparator:
         if human_freq:
             human_output = self.output_dir / "demo" / "human_top10.svg"
             self.plot_top10_frequencies(
-                human_freq, human_output, "Top 10 Most Frequent Human Language Tokens"
+                human_freq,
+                human_output,
+                "GnBu",
+                "Top 10 Most Frequent Human Language Tokens",
             )
 
         # Plot domain-specific tokenizer frequencies
@@ -481,6 +497,7 @@ class TokenizerComparator:
             self.plot_top10_frequencies(
                 domain_freq,
                 domain_output,
+                "BuGn",
                 "Top 10 Most Frequent Domain-Specific Tokens",
             )
 
@@ -506,7 +523,10 @@ class TokenizerComparator:
         if human_freq:
             human_output = self.output_dir / "demo" / "human_top10.svg"
             self.plot_top10_frequencies(
-                human_freq, human_output, "Top 10 Most Frequent Human Language Tokens"
+                human_freq,
+                human_output,
+                "GnBu",
+                "Top 10 Most Frequent Human Language Tokens",
             )
 
         # Plot domain-specific tokenizer frequencies
@@ -516,6 +536,7 @@ class TokenizerComparator:
             self.plot_top10_frequencies(
                 domain_freq,
                 domain_output,
+                "BuGn",
                 "Top 10 Most Frequent Domain-Specific Tokens",
             )
 

@@ -21,48 +21,24 @@ import pandas as pd
 import scienceplots
 
 from flow.utils import setup_logging
+from flow.utils.plot_utils import palette_slice
 
 if scienceplots:
     plt.style.use(["science"])
-
-COLOR_PALETTE: List[tuple[float, float, float]] = [
-    (249 / 255, 199 / 255, 79 / 255),
-    (196 / 255, 194 / 255, 94 / 255),
-    (144 / 255, 190 / 255, 109 / 255),
-    (106 / 255, 180 / 255, 124 / 255),
-    (67 / 255, 170 / 255, 139 / 255),
-    (77 / 255, 144 / 255, 142 / 255),
-    (87 / 255, 117 / 255, 144 / 255),
-]
-
-
-def _palette_slice(count: int) -> List[tuple[float, float, float]]:
-    if count <= 0:
-        return []
-    palette_len = len(COLOR_PALETTE)
-    if count >= palette_len:
-        return [COLOR_PALETTE[i % palette_len] for i in range(count)]
-    if count == 1:
-        return [COLOR_PALETTE[0]]
-
-    indices = [
-        int(round(i * (palette_len - 1) / (count - 1)))
-        for i in range(count)
-    ]
-    return [COLOR_PALETTE[idx] for idx in indices]
-
-VIOLATION_RE = re.compile(r"Total\s+Violations\s*:\s*(\d+)", re.IGNORECASE)
-FIG_SIZE = (24, 8)
-TEXT_SIZE = 24
-FONT_SIZE = 36
-LEGEND_SIZE = 36
 
 
 class DRCParser:
     """DRC report parser for extracting violation counts."""
 
-    @staticmethod
-    def parse_drc_num(path: Path) -> Optional[int]:
+    def __init__(
+        self,
+        violation_re: re.Pattern[str] = re.compile(
+            r"Total\s+Violations\s*:\s*(\d+)", re.IGNORECASE
+        ),
+    ) -> None:
+        self.violation_re = violation_re
+
+    def parse_drc_num(self, path: Path) -> Optional[int]:
         """Parse DRC violation count from report file."""
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -70,7 +46,7 @@ class DRCParser:
         except OSError:
             return None
 
-        match = VIOLATION_RE.search(text)
+        match = self.violation_re.search(text)
         if not match:
             return None
 
@@ -146,10 +122,20 @@ class CSVExporter:
 class DRCPlotter:
     """DRC data visualization plotter."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        fig_size: Tuple[int, int] = (24, 8),
+        text_size: int = 24,
+        font_size: int = 36,
+        legend_size: int = 36,
+    ):
         meta_types = ["GT", "PRED", "POST"]
-        colors = _palette_slice(len(meta_types))
+        colors = palette_slice(len(meta_types))
         self.color_map = {meta: colors[idx] for idx, meta in enumerate(meta_types)}
+        self.fig_size = fig_size
+        self.text_size = text_size
+        self.font_size = font_size
+        self.legend_size = legend_size
 
     def create_plot(self, csv_path: Path, output_path: Path) -> None:
         """Create and save DRC distribution plot."""
@@ -168,7 +154,7 @@ class DRCPlotter:
 
     def _create_base_plot(self, df: pd.DataFrame) -> Tuple[plt.Figure, plt.Axes]:
         """Create base plot configuration."""
-        return plt.subplots(figsize=FIG_SIZE)
+        return plt.subplots(figsize=self.fig_size)
 
     def _add_bars_and_labels(self, ax: plt.Axes, df: pd.DataFrame) -> None:
         """Add bars and labels to the plot."""
@@ -270,7 +256,7 @@ class DRCPlotter:
                 f"{int(drc_eco[j])}",
                 ha="center",
                 va="bottom",
-                fontsize=TEXT_SIZE,
+                fontsize=self.text_size,
                 fontweight="bold",
             )
 
@@ -299,15 +285,15 @@ class DRCPlotter:
                 original_text,
                 ha="center",
                 va="bottom",
-                fontsize=TEXT_SIZE,
+                fontsize=self.text_size,
                 fontweight="bold",
             )
 
     def _customize_plot(self, ax: plt.Axes, df: pd.DataFrame) -> None:
         """Customize plot appearance and legend."""
         ax.set_yscale("log")
-        ax.set_ylabel("DRC Count", fontsize=FONT_SIZE)
-        ax.tick_params(axis="y", labelsize=FONT_SIZE)
+        ax.set_ylabel("DRC Count", fontsize=self.font_size)
+        ax.tick_params(axis="y", labelsize=self.font_size)
 
         # Rotate x-axis labels if too many designs
         ax.set_xlabel("")
@@ -315,7 +301,7 @@ class DRCPlotter:
         designs = df["design"].unique()
         x_pos = [i * 1.0 for i in range(len(designs))]
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(designs, ha="center", fontsize=FONT_SIZE)
+        ax.set_xticklabels(designs, ha="center", fontsize=self.font_size)
         ax.set_xlim(-0.5, len(designs) - 0.5)
 
         self._add_legend(ax)
@@ -339,7 +325,7 @@ class DRCPlotter:
             shadow=True,
             ncol=3,
             columnspacing=0.8,
-            fontsize=LEGEND_SIZE,
+            fontsize=self.legend_size,
         )
         legend.get_frame().set_facecolor("white")
         legend.get_frame().set_alpha(0.9)
@@ -364,11 +350,15 @@ class DRCPlotter:
 class DRCProcessor:
     """Main processor for DRC data collection and visualization."""
 
-    def __init__(self):
-        self.parser = DRCParser()
+    def __init__(
+        self,
+        parser: Optional[DRCParser] = None,
+        plotter: Optional[DRCPlotter] = None,
+    ):
+        self.parser = parser or DRCParser()
         self.collector = DRCDataCollector(self.parser)
         self.exporter = CSVExporter()
-        self.plotter = DRCPlotter()
+        self.plotter = plotter or DRCPlotter()
 
     def process(self, base_dir: Path, output_dir: Path) -> None:
         """Process DRC data: collect, export to CSV, and create visualization."""

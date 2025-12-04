@@ -32,34 +32,10 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 
+from flow.utils.plot_utils import palette_slice
+
 if scienceplots:
-    plt.style.use(["science", "no-latex"])
-
-COLOR_PALETTE: List[tuple[float, float, float]] = [
-    (249 / 255, 199 / 255, 79 / 255),
-    (196 / 255, 194 / 255, 94 / 255),
-    (144 / 255, 190 / 255, 109 / 255),
-    (106 / 255, 180 / 255, 124 / 255),
-    (67 / 255, 170 / 255, 139 / 255),
-    (77 / 255, 144 / 255, 142 / 255),
-    (87 / 255, 117 / 255, 144 / 255),
-]
-
-
-def _palette_slice(count: int) -> List[tuple[float, float, float]]:
-    if count <= 0:
-        return []
-    palette_len = len(COLOR_PALETTE)
-    if count >= palette_len:
-        return [COLOR_PALETTE[i % palette_len] for i in range(count)]
-    if count == 1:
-        return [COLOR_PALETTE[0]]
-
-    indices = [
-        int(round(i * (palette_len - 1) / (count - 1)))
-        for i in range(count)
-    ]
-    return [COLOR_PALETTE[idx] for idx in indices]
+    plt.style.use(["science"])
 
 
 @dataclass
@@ -400,7 +376,7 @@ class EmbeddingVisualizer:
             groups_order = ["U-D", "L-R", "T-B", "SPECIAL"]
             logic = "combined"
 
-        colors = _palette_slice(len(groups_order))
+        colors = palette_slice(len(groups_order))
         color_mapping = {group: colors[idx] for idx, group in enumerate(groups_order)}
         direction_coords = {k: [] for k in groups_order}
 
@@ -462,10 +438,8 @@ class EmbeddingVisualizer:
             if label not in seen:
                 seen.append(label)
         unique_labels = seen
-        colors = _palette_slice(len(unique_labels))
-        color_mapping = {
-            label: colors[idx] for idx, label in enumerate(unique_labels)
-        }
+        colors = palette_slice(len(unique_labels))
+        color_mapping = {label: colors[idx] for idx, label in enumerate(unique_labels)}
 
         for label in unique_labels:
             label_indices = [i for i, lab in enumerate(labels) if lab == label]
@@ -674,7 +648,6 @@ class EmbeddingVisualizer:
                                     coords,
                                     tokens_filtered,
                                     config["grouping_type"],
-                                    method,
                                     cluster_index=0,
                                     main_w_n=16,
                                     main_h_n=12,
@@ -966,7 +939,6 @@ class EmbeddingVisualizer:
                         coords,
                         tokens,
                         grouping_type,
-                        method,
                         cluster_index=0,
                         main_w_n=16,
                         main_h_n=12,
@@ -1282,7 +1254,7 @@ class EmbeddingVisualizer:
         else:
             groups_order = ["U-D", "L-R", "T-B", "SPECIAL"]
 
-        colors = _palette_slice(len(groups_order))
+        colors = palette_slice(len(groups_order))
         return {group: colors[idx] for idx, group in enumerate(groups_order)}
 
     def _plot_domain_data_from_tokens(
@@ -1658,7 +1630,6 @@ class EmbeddingVisualizer:
         coords: np.ndarray,
         tokens: List[str],
         grouping_type: str,
-        method: str,
         cluster_index: int = 0,
         main_w_n: int = 16,
         main_h_n: int = 16,
@@ -1920,6 +1891,7 @@ class EmbeddingVisualizer:
                             alpha=0.9,
                             ha="center",
                             va="center",
+                            fontweight="bold",
                         )
                         texts.append(text)
 
@@ -1944,6 +1916,7 @@ class EmbeddingVisualizer:
                     ha="center",
                     va="center",
                     fontsize=font_size,
+                    fontweight="bold",
                 )
                 ax_detail.set_xticks([])
                 ax_detail.set_yticks([])
@@ -2171,10 +2144,8 @@ class EmbeddingVisualizer:
             if label not in seen:
                 seen.append(label)
         unique_labels = seen
-        colors = _palette_slice(len(unique_labels))
-        color_mapping = {
-            label: colors[idx] for idx, label in enumerate(unique_labels)
-        }
+        colors = palette_slice(len(unique_labels))
+        color_mapping = {label: colors[idx] for idx, label in enumerate(unique_labels)}
 
         for label in unique_labels:
             label_indices = [i for i, lab in enumerate(labels) if lab == label]
