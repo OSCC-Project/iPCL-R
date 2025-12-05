@@ -839,7 +839,8 @@ class DesignSummaryProcessor:
             else:
                 density_val = ""
 
-            latex_content += f"\t\t{design.replace('_', r'\_')} & {comb_cells} & {seq_cells} & {nets} & {density_val} \\\\\n"
+            safe_design = design.replace("_", "\_")
+            latex_content += f"\t\t{safe_design} & {comb_cells} & {seq_cells} & {nets} & {density_val} \\\n"
 
         latex_content += r"""		\midrule
 	\end{tabularx}
@@ -1201,7 +1202,8 @@ class DesignSummaryProcessor:
 
         for row_idx, (design, meta_data, _) in enumerate(sorted_designs):
             routing_data = routing_lookup.get(design, {})
-            latex_content += f"\t\t{design.replace('_', r'\_')}"
+            safe_design = design.replace("_", "\\_")
+            latex_content += f"\t\t{safe_design}"
 
             # #Vias (remove GT column)
             vias_orig = meta_data.get("ORIGINAL", {}).get("Total Vias", "")

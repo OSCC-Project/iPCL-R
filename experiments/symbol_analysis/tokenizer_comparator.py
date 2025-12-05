@@ -37,7 +37,7 @@ class TokenizerComparator:
         output_dir: Path,
         plot_only: bool = False,
         fig_size: tuple[int, int] = (8, 8),
-        text_size: int = 24,
+        text_size: int = 28,
         font_size: int = 36,
         palette: tuple = COLOR_PALETTE,
     ):
@@ -486,7 +486,7 @@ class TokenizerComparator:
             self.plot_top10_frequencies(
                 human_freq,
                 human_output,
-                "GnBu",
+                "BuGn",
                 "Top 10 Most Frequent Human Language Tokens",
             )
 
@@ -497,7 +497,7 @@ class TokenizerComparator:
             self.plot_top10_frequencies(
                 domain_freq,
                 domain_output,
-                "BuGn",
+                "GnBu",
                 "Top 10 Most Frequent Domain-Specific Tokens",
             )
 
@@ -525,7 +525,7 @@ class TokenizerComparator:
             self.plot_top10_frequencies(
                 human_freq,
                 human_output,
-                "GnBu",
+                "BuGn",
                 "Top 10 Most Frequent Human Language Tokens",
             )
 
@@ -536,7 +536,7 @@ class TokenizerComparator:
             self.plot_top10_frequencies(
                 domain_freq,
                 domain_output,
-                "BuGn",
+                "GnBu",
                 "Top 10 Most Frequent Domain-Specific Tokens",
             )
 

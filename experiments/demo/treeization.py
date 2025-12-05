@@ -372,7 +372,6 @@ def _create_axes(fig):
 
 
 def _draw_frame_on_axes(
-    fig,
     axes,
     graph,
     pos,
@@ -565,7 +564,6 @@ def create_frame(
     fig.patch.set_facecolor(COLORS["background"])
     axes = _create_axes(fig)
     _draw_frame_on_axes(
-        fig,
         axes,
         graph,
         pos,
@@ -643,7 +641,6 @@ def create_animation(output_dir: Path):
     fps = 10
 
     _draw_frame_on_axes(
-        fig,
         axes,
         graph,
         pos,
@@ -702,7 +699,6 @@ def create_animation(output_dir: Path):
             )
 
         _draw_frame_on_axes(
-            fig,
             axes,
             graph,
             pos,
@@ -722,7 +718,6 @@ def create_animation(output_dir: Path):
             for _ in range(3):
                 for alpha in (0.3, 1.0):
                     _draw_frame_on_axes(
-                        fig,
                         axes,
                         graph,
                         pos,

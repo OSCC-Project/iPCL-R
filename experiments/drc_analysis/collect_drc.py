@@ -140,7 +140,7 @@ class DRCPlotter:
     def create_plot(self, csv_path: Path, output_path: Path) -> None:
         """Create and save DRC distribution plot."""
         df = self._load_and_prepare_data(csv_path)
-        fig, ax = self._create_base_plot(df)
+        fig, ax = self._create_base_plot()
         self._add_bars_and_labels(ax, df)
         self._customize_plot(ax, df)
         self._save_plot(fig, output_path)
@@ -152,7 +152,7 @@ class DRCPlotter:
         df["drc_eco_num"] = pd.to_numeric(df["drc_eco_num"]).astype(int)
         return df.sort_values(by="drc_num", ascending=True)
 
-    def _create_base_plot(self, df: pd.DataFrame) -> Tuple[plt.Figure, plt.Axes]:
+    def _create_base_plot(self) -> Tuple[plt.Figure, plt.Axes]:
         """Create base plot configuration."""
         return plt.subplots(figsize=self.fig_size)
 
@@ -343,8 +343,8 @@ class DRCPlotter:
 
     def _save_plot(self, fig: plt.Figure, output_path: Path) -> None:
         """Save plot to file."""
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        fig.tight_layout()
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
 
 
 class DRCProcessor:

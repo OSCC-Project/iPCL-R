@@ -101,9 +101,7 @@ def plot_symbol_frequency_ranking(
     )
 
     # Configure plot appearance
-    configure_symbol_frequency_plot(
-        fig, ax, font_size=font_size, legend_size=legend_size
-    )
+    configure_symbol_frequency_plot(ax, font_size=font_size, legend_size=legend_size)
 
     # Save plot
     output_path = output_dir / "symbol_frequency_rank.pdf"
@@ -533,9 +531,7 @@ def calculate_uniform_marker_positions(
     return marker_indices
 
 
-def configure_symbol_frequency_plot(
-    fig, ax, font_size: int = 36, legend_size: int = 36
-):
+def configure_symbol_frequency_plot(ax, font_size: int = 36, legend_size: int = 36):
     """Configure the appearance of symbol frequency ranking plot"""
     # Labels and scales
     ax.set_xlabel(r"Cumulative Percentage (\%)", fontsize=font_size, fontweight="bold")

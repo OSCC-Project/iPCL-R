@@ -69,7 +69,6 @@ def generate_llm_predictions(
     tokenizer: AutoTokenizer,
     flow_config: FlowConfig,
     skip_inference: bool = False,
-    output_dir: Path = None,
 ) -> Dataset:
     """
     Generate LLM predictions using vLLM for high-throughput inference (multi-GPU supported).
@@ -80,7 +79,6 @@ def generate_llm_predictions(
         tokenizer: HF tokenizer instance, used to fetch eos_token_id
         flow_config: FlowConfig containing generation parameters and model path
         skip_inference: If True, skip inference and load llm_coords from CSV file
-        output_dir: Output directory path (unused, kept for backward compatibility)
 
     Returns:
         Dataset with 'llm_coords' column containing generated coordinate sequences
@@ -859,7 +857,7 @@ def analyze_filtering_statistics(dataset: Dataset) -> Dict[str, Any]:
     return stats
 
 
-def generate_scientific_report(dataset: Dataset, statistics: Dict[str, Any]) -> str:
+def generate_scientific_report(statistics: Dict[str, Any]) -> str:
     """
     Generate comprehensive scientific publication-ready analysis report.
 
@@ -867,13 +865,11 @@ def generate_scientific_report(dataset: Dataset, statistics: Dict[str, Any]) -> 
     comparative analysis suitable for research documentation.
 
     Args:
-        dataset: Complete evaluated dataset (available for future extensions)
         statistics: Statistical metrics from analyze_filtering_statistics
 
     Returns:
         Formatted scientific report string
     """
-    # Note: dataset parameter reserved for future report extensions
     logging.info("Generating scientific publication report...")
 
     total_samples = statistics.get("total_samples", 0)
@@ -1004,7 +1000,6 @@ def evaluation(args: argparse.Namespace):
             tokenizer,
             flow_config,
             skip_inference=args.skip_inference,
-            output_dir=args.output_dir,
         )
 
         # Apply multi-stage filtering pipeline
@@ -1029,7 +1024,7 @@ def evaluation(args: argparse.Namespace):
         # Generate comprehensive analysis and save results
         logging.info("📊 Generating comprehensive analysis...")
         statistics = analyze_filtering_statistics(dataset)
-        report = generate_scientific_report(dataset, statistics)
+        report = generate_scientific_report(statistics)
 
         # Save results to structured files
         logging.info("💾 Saving evaluation results...")

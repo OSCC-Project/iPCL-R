@@ -332,10 +332,10 @@ class EmbeddingVisualizer:
 
         if label_type == "Domain":
             self._plot_domain_groups(
-                ax, coords, tokens, labels, is_3d, grouping_type, marker_size
+                ax, coords, tokens, is_3d, grouping_type, marker_size
             )
         else:
-            self._plot_standard_groups(ax, coords, tokens, labels, is_3d, marker_size)
+            self._plot_standard_groups(ax, coords, labels, is_3d, marker_size)
 
         self._set_labels_and_styling(ax, is_3d, font_size)
 
@@ -352,7 +352,7 @@ class EmbeddingVisualizer:
         if (
             self.plot_spec.annotate_top_n > 0 and not is_3d and label_type == "Domain"
         ):  # Annotations only for 2D
-            self._add_annotations(ax, coords, tokens, labels, font_size)
+            self._add_annotations(ax, coords, tokens, font_size)
 
         ax.legend(loc="best", fontsize=legend_size, frameon=False)
         fig.tight_layout()
@@ -363,7 +363,6 @@ class EmbeddingVisualizer:
         ax,
         coords: np.ndarray,
         tokens: List[str],
-        _labels: List[str],
         is_3d: bool,
         grouping_type: str = "4group",
         marker_size: int = 48,
@@ -427,7 +426,6 @@ class EmbeddingVisualizer:
         self,
         ax,
         coords: np.ndarray,
-        _tokens: List[str],
         labels: List[str],
         is_3d: bool,
         marker_size: int = 48,
@@ -479,7 +477,6 @@ class EmbeddingVisualizer:
         ax,
         coords: np.ndarray,
         tokens: List[str],
-        _labels: List[str],
         font_size: int = 5,
     ):
         """Add token annotations to 2D plots."""
@@ -886,13 +883,10 @@ class EmbeddingVisualizer:
                     logging.warning(f"Empty CSV file: {csv_file.name}")
                     continue
 
-                # Extract metadata from filename
                 filename = csv_file.stem
-                parts = filename.split("_")
 
-                # Determine dimensions and method
+                # Determine dimensions
                 is_3d = "z" in df.columns
-                method = self._extract_method_from_filename(parts)
                 grouping_type = self._extract_grouping_from_filename(
                     filename, tokenizer_type
                 )
@@ -907,7 +901,6 @@ class EmbeddingVisualizer:
                     coords,
                     tokens,
                     labels,
-                    method,
                     tokenizer_type,
                     is_3d,
                     grouping_type,
@@ -1162,13 +1155,6 @@ class EmbeddingVisualizer:
 
         return plot_output_paths if plot_output_paths else None
 
-    def _extract_method_from_filename(self, parts: List[str]) -> str:
-        """Extract dimensionality reduction method from filename parts"""
-        for part in parts:
-            if part.lower() in ["pca", "tsne", "umap"]:
-                return part.lower()
-        return "pca"  # default
-
     def _extract_grouping_from_filename(
         self, filename: str, tokenizer_type: str
     ) -> str:
@@ -1189,7 +1175,6 @@ class EmbeddingVisualizer:
         coords: np.ndarray,
         tokens: List[str],
         labels: List[str],
-        method: str,
         tokenizer_type: str,
         is_3d: bool,
         grouping_type: str,
@@ -1231,7 +1216,7 @@ class EmbeddingVisualizer:
                 ax.spines["left"].set_visible(False)
         else:
             # Set axis labels
-            self._set_axis_labels_for_method(ax, method, is_3d, font_size)
+            self._set_axis_labels_for_method(ax, is_3d, font_size)
 
         # Add legend and layout
         ax.legend(
@@ -2173,7 +2158,7 @@ class EmbeddingVisualizer:
                 )
 
     def _set_axis_labels_for_method(
-        self, ax, method: str, is_3d: bool, font_size: int = 18
+        self, ax, is_3d: bool, font_size: int = 18
     ) -> None:
         """Set appropriate axis labels using unified X, Y, Z format"""
         ax.set_xlabel("X", fontsize=font_size)
