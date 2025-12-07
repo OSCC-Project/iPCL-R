@@ -40,10 +40,10 @@ def parse_args() -> argparse.Namespace:
         help="Path to the flow configuration file for the Large-DecimalWordLevel experiment.",
     )
     parser.add_argument(
-        "--output-dir",
+        "--ft-config-path",
         type=Path,
-        default=Path("/mnt/local_data1/liweiguo/experiments/grpo_ft"),
-        help="Base directory for GRPO outputs.",
+        default=Path("./experiments/grpo_ft/flow_config.json"),
+        help="Path to the flow configuration file for the GRPO fine-tuning experiment.",
     )
     parser.add_argument(
         "--max-steps",
@@ -90,24 +90,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reward-type",
         type=str,
-        default="gated_composite",
+        default="gated_timing_composite",
         choices=[
             "wirelength",
             "adaptive_wl_via",
             "connectivity",
             "graceful",
-            "composite",
-            "gated_composite",
+            "elmore_delay",
+            "gated_wl_composite",
+            "gated_timing_composite",
         ],
         help=(
             "Reward type to use. Options: wirelength, adaptive_wl_via, connectivity, "
-            "graceful, gated_composite (adaptive gated by connectivity & graceful & wirelength)."
+            "graceful, elmore_delay, gated_wl_composite (wirelength/via improvement gated "
+            "by connectivity & graceful), gated_timing_composite (Elmore delay improvement "
+            "gated by connectivity & graceful)."
         ),
     )
     parser.add_argument(
         "--via-weight",
         type=float,
-        default=0.3,
+        default=1.0,
         help="Weight applied to via-count improvement when computing adaptive reward.",
     )
     parser.add_argument(
@@ -133,6 +136,36 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=-0.2,
         help="Penalty when wirelength parsing fails (for WirelengthReward).",
+    )
+    parser.add_argument(
+        "--elmore-unit-resistance",
+        type=float,
+        default=1.0,
+        help="Unit resistance per Manhattan step for Elmore delay (normalized ohms).",
+    )
+    parser.add_argument(
+        "--elmore-unit-capacitance",
+        type=float,
+        default=1.0,
+        help="Unit capacitance per Manhattan step for Elmore delay (normalized farads).",
+    )
+    parser.add_argument(
+        "--elmore-load-capacitance",
+        type=float,
+        default=1.0,
+        help="Load capacitance placed on each sink when computing Elmore delay (normalized farads).",
+    )
+    parser.add_argument(
+        "--elmore-failure-penalty",
+        type=float,
+        default=-0.2,
+        help="Penalty when Elmore delay parsing fails (for ElmoreDelayReward).",
+    )
+    parser.add_argument(
+        "--elmore-improvement-clip",
+        type=float,
+        default=1.0,
+        help="Clamp for normalized Elmore delay improvement.",
     )
     parser.add_argument(
         "--connectivity-mode",
@@ -356,11 +389,12 @@ def build_training_config(
     flow_config: FlowConfig,
 ) -> Tuple[GRPOConfig, Path]:
     hyper = flow_config.training.hyperparameters
+    paths = flow_config.training.paths
     generation_config = flow_config.evaluation.generation
     prompt_length = args.max_prompt_length or hyper.max_src_len
     completion_length = args.max_completion_length or hyper.max_tgt_len
 
-    output_dir = args.output_dir / "training"
+    output_dir = Path(paths.model_save_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if generation_config.max_new_tokens:
@@ -421,15 +455,15 @@ def main() -> None:
     if args.fp16 and args.bf16:
         raise ValueError("Specify at most one of --fp16 or --bf16.")
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    base_flow_config = load_flow_config(args.flow_config_path)
+    ft_flow_config = load_flow_config(args.ft_config_path)
 
-    large_decimal_flow_config = load_flow_config(args.flow_config_path)
-
-    tokenizer_wrapper = load_unified_tokenizer(large_decimal_flow_config)
+    tokenizer_wrapper = load_unified_tokenizer(base_flow_config)
 
     # Create reward function based on type
     reward_type = args.reward_type
-    if reward_type == "gated_composite":
+
+    if reward_type == "gated_wl_composite":
         reward = create_reward(
             reward_type,
             tokenizer_wrapper,
@@ -448,9 +482,35 @@ def main() -> None:
             },
         )
         logging.info(
-            "Created gated composite reward (connectivity_mode=%s, wirelength_failure_penalty=%.2f)",
+            "Created gated wirelength composite reward (connectivity_mode=%s, wirelength_failure_penalty=%.2f)",
             args.connectivity_mode,
             args.wirelength_failure_penalty,
+        )
+    elif reward_type == "gated_timing_composite":
+        reward = create_reward(
+            reward_type,
+            tokenizer_wrapper,
+            elmore_kwargs={
+                "unit_resistance": args.elmore_unit_resistance,
+                "unit_capacitance": args.elmore_unit_capacitance,
+                "load_capacitance": args.elmore_load_capacitance,
+                "failure_penalty": args.elmore_failure_penalty,
+                "improvement_clip": args.elmore_improvement_clip,
+            },
+            connectivity_kwargs={
+                "penalty": args.connectivity_penalty,
+                "use_continuous": args.connectivity_mode == "ratio",
+            },
+            graceful_kwargs={
+                "penalty": args.graceful_penalty,
+            },
+        )
+        logging.info(
+            "Created gated timing composite reward (connectivity_mode=%s, elmore_unit_resistance=%.2f, elmore_unit_capacitance=%.2f, elmore_load_capacitance=%.2f)",
+            args.connectivity_mode,
+            args.elmore_unit_resistance,
+            args.elmore_unit_capacitance,
+            args.elmore_load_capacitance,
         )
     else:
         reward_kwargs: dict = {}
@@ -464,6 +524,14 @@ def main() -> None:
         elif reward_type == "adaptive_wl_via":
             reward_kwargs["via_weight"] = args.via_weight
             reward_kwargs["failure_penalty"] = args.wirelength_failure_penalty
+        elif reward_type == "elmore_delay":
+            reward_kwargs = {
+                "unit_resistance": args.elmore_unit_resistance,
+                "unit_capacitance": args.elmore_unit_capacitance,
+                "load_capacitance": args.elmore_load_capacitance,
+                "failure_penalty": args.elmore_failure_penalty,
+                "improvement_clip": args.elmore_improvement_clip,
+            }
 
         reward = create_reward(
             reward_type,
@@ -474,19 +542,19 @@ def main() -> None:
 
     with PartialState().main_process_first():
         train_dataset = prepare_grpo_dataset(
-            large_decimal_flow_config,
+            base_flow_config,
             max_completion_length=args.max_completion_length,
             max_train_samples=args.max_train_samples,
         )
 
-    model = load_model(large_decimal_flow_config)
+    model = load_model(base_flow_config)
 
     tokenizer = tokenizer_wrapper.tokenizer
 
     training_args, training_output_dir = build_training_config(
         args,
         tokenizer,
-        large_decimal_flow_config,
+        ft_flow_config,
     )
 
     trainer = GRPOEncoderDecoderTrainer(

@@ -14,8 +14,9 @@ import math
 from abc import ABC, abstractmethod
 from collections import Counter
 from itertools import chain
-from typing import Callable, Dict, Iterable, List, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
+from flow.evaluation.pipeline import compute_uniform_scale_factor, scale_trees_uniformly
 from flow.tokenization import UnifiedTokenizer
 from flow.tokenization.tokenizer import Node
 from flow.utils import CoordinatePoint
@@ -27,6 +28,11 @@ class RewardCalculator(ABC):
     @abstractmethod
     def __call__(self, completions: Iterable[str], **kwargs) -> List[float]:
         """Compute rewards for a batch of completions."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement __call__ for"
+            f" completions type {type(completions).__name__}"
+            f" with kwargs {list(kwargs.keys())}"
+        )
 
     @property
     def __name__(self) -> str:
@@ -83,6 +89,11 @@ def _get_leaves(
         for point, count in point_counts.items()
         if count == 1 and point != root_coord
     ]
+
+
+def _manhattan_2d(src: CoordinatePoint, dst: CoordinatePoint) -> int:
+    """2D Manhattan length between two coordinates (ignores metal layer delta)."""
+    return abs(src.x - dst.x) + abs(src.y - dst.y)
 
 
 class WirelengthReward(RewardCalculator):
@@ -592,30 +603,243 @@ class GracefulReward(RewardCalculator):
         ]
 
 
-class GatedCompositeReward(RewardCalculator):
-    """Composite reward that gates wirelength improvement by structural success."""
+class ElmoreDelayReward(RewardCalculator):
+    """Normalized Elmore delay improvement using max sink delay."""
 
     def __init__(
         self,
-        adaptive_reward: AdaptiveWirelengthViaReward,
-        connectivity_reward: ConnectivityReward,
-        graceful_reward: GracefulReward,
-        wirelength_reward: WirelengthReward,
+        tokenizer: UnifiedTokenizer,
+        unit_resistance: float = 1.0,
+        unit_capacitance: float = 1.0,
+        load_capacitance: float = 1.0,
+        db_unit: float = 2000.0,
+        failure_penalty: float = -0.2,
+        improvement_clip: float = 1.0,
+    ):
+        """
+        Args:
+            tokenizer: UnifiedTokenizer instance.
+            unit_resistance: Resistance per unit Manhattan length (ohms, normalized).
+            unit_capacitance: Capacitance per unit Manhattan length (F, normalized).
+            load_capacitance: Lumped load capacitance placed on each sink (F, normalized).
+            db_unit: DEF/DBU per micron (or grid-to-physical scaling). Manhattan length
+                will be divided by this value before applying R/C; defaults to 2000.
+            failure_penalty: Penalty when parsing fails or delay is invalid.
+            improvement_clip: Clamp for normalized improvement value.
+        """
+        self.tokenizer = tokenizer
+        self.unit_resistance = unit_resistance
+        self.unit_capacitance = unit_capacitance
+        self.load_capacitance = load_capacitance
+        self.db_unit = db_unit if db_unit and db_unit > 0 else 2000.0
+        self.failure_penalty = failure_penalty
+        self.improvement_clip = improvement_clip
+
+    def _parse_tree(self, completion: str) -> Node:
+        """Parse a completion into a routing tree."""
+        routing_sequence = self.tokenizer.convert_tokens_to_routing(completion)
+        tree = self.tokenizer.build_tree_structure(routing_sequence)
+        if tree is None or tree.coord is None:
+            raise ValueError("Failed to build tree structure")
+        return tree
+
+    def _collect_load_coordinates(
+        self,
+        relative_loads: Optional[List[str]],
+        tree: Node,
+        scale_factor: float = 1.0,
+    ) -> Set[CoordinatePoint]:
+        """Prefer user-provided loads; fall back to tree leaves."""
+        load_coords: Set[CoordinatePoint] = set()
+        if relative_loads:
+            for relative_load in relative_loads:
+                try:
+                    coord = self.tokenizer.parse_coord(relative_load)
+                    if scale_factor != 1.0:
+                        coord = CoordinatePoint(
+                            coord.x, coord.y, int(coord.m * scale_factor)
+                        )
+                    load_coords.add(coord)
+                except Exception as exc:
+                    logging.debug(
+                        "Failed to parse relative load '%s': %s", relative_load, exc
+                    )
+
+        if not load_coords:
+            edges = _collect_edges(tree)
+            leaves = _get_leaves(edges, tree.coord) if edges else []
+            if leaves:
+                load_coords.update(leaves)
+            elif tree.coord:
+                load_coords.add(tree.coord)
+
+        return load_coords
+
+    def _compute_delay_from_tree(
+        self, tree: Node, load_coords: Set[CoordinatePoint]
+    ) -> float:
+        """Compute max Elmore delay to any sink in a prepared tree."""
+        subtree_caps: Dict[Node, float] = {}
+
+        def accumulate_capacitance(node: Node) -> float:
+            if node.coord is None:
+                return 0.0
+            total_cap = self.load_capacitance if node.coord in load_coords else 0.0
+            for child in node.children:
+                if child.coord is None:
+                    continue
+                edge_length = _manhattan_2d(node.coord, child.coord)
+                physical_len = edge_length / self.db_unit
+                edge_cap = physical_len * self.unit_capacitance
+                total_cap += edge_cap
+                total_cap += accumulate_capacitance(child)
+            subtree_caps[node] = total_cap
+            return total_cap
+
+        accumulate_capacitance(tree)
+
+        delays: List[float] = []
+
+        def accumulate_delay(node: Node, upstream_delay: float) -> None:
+            if node.coord is None:
+                return
+            for child in node.children:
+                if child.coord is None:
+                    continue
+                edge_length = _manhattan_2d(node.coord, child.coord)
+                physical_len = edge_length / self.db_unit
+                edge_resistance = physical_len * self.unit_resistance
+                edge_cap = physical_len * self.unit_capacitance
+                downstream_cap = subtree_caps.get(child, 0.0) + edge_cap
+                edge_delay = edge_resistance * downstream_cap
+                total_delay = upstream_delay + edge_delay
+                if child.coord in load_coords or not child.children:
+                    delays.append(total_delay)
+                accumulate_delay(child, total_delay)
+
+        accumulate_delay(tree, 0.0)
+
+        if not delays:
+            return 0.0
+        return max(delays)
+
+    def _compute_max_delay(
+        self, completion: str, relative_loads: Optional[List[str]]
+    ) -> float:
+        """Compute max Elmore delay to any sink in the tree."""
+        if not completion or not completion.strip():
+            raise ValueError("Empty completion")
+
+        tree = self._parse_tree(completion)
+        load_coords = self._collect_load_coordinates(relative_loads, tree)
+        return self._compute_delay_from_tree(tree, load_coords)
+
+    def _score_single(
+        self,
+        completion: str,
+        target_tokens: str,
+        relative_loads: Optional[List[str]],
+    ) -> float:
+        """Reward predicted delay improvement relative to ground truth."""
+        if not completion or not completion.strip():
+            return self.failure_penalty
+
+        try:
+            pred_tree = self._parse_tree(completion)
+            gt_tree = self._parse_tree(target_tokens)
+
+            scale_factor = compute_uniform_scale_factor(pred_tree, gt_tree)
+            scaled_pred_tree, scaled_gt_tree = scale_trees_uniformly(
+                pred_tree, gt_tree, scale_factor
+            )
+
+            pred_load_coords = self._collect_load_coordinates(
+                relative_loads, scaled_pred_tree, scale_factor
+            )
+            gt_load_coords = self._collect_load_coordinates(
+                relative_loads, scaled_gt_tree, scale_factor
+            )
+
+            pred_delay = self._compute_delay_from_tree(
+                scaled_pred_tree, pred_load_coords
+            )
+            gt_delay = self._compute_delay_from_tree(scaled_gt_tree, gt_load_coords)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logging.debug("Failed to evaluate completion '%s': %s", completion, exc)
+            return self.failure_penalty
+
+        if gt_delay <= 0.0 or pred_delay <= 0.0:
+            logging.debug(
+                "Invalid delay (gt=%s, pred=%s), returning failure_penalty",
+                gt_delay,
+                pred_delay,
+            )
+            return self.failure_penalty
+
+        denom = max(gt_delay, pred_delay, 1e-6)
+        improvement = (gt_delay - pred_delay) / denom
+        improvement = max(-self.improvement_clip, min(self.improvement_clip, improvement))
+        return improvement
+
+    def __call__(self, completions: Iterable[str], **kwargs) -> List[float]:
+        target_tokens = kwargs.get("target_tokens")
+        if target_tokens is None:
+            raise ValueError("Missing required argument 'target_tokens' in kwargs")
+
+        relative_loads_batch = kwargs.get("relative_loads")
+        completions_list = list(completions)
+
+        if len(completions_list) != len(target_tokens):
+            raise ValueError(
+                f"Number of completions ({len(completions_list)}) must match "
+                f"number of target_tokens ({len(target_tokens)})"
+            )
+
+        if relative_loads_batch is None:
+            relative_loads_batch = [None] * len(completions_list)
+        elif len(relative_loads_batch) != len(completions_list):
+            raise ValueError(
+                f"Number of completions ({len(completions_list)}) must match "
+                f"number of relative_loads ({len(relative_loads_batch)})"
+            )
+
+        return [
+            self._score_single(comp, target, relative_loads_batch[idx])
+            for idx, (comp, target) in enumerate(
+                zip(completions_list, target_tokens)
+            )
+        ]
+
+
+class GatedCompositeReward(RewardCalculator):
+    """Composite reward that gates an improvement metric by structural success."""
+
+    def __init__(
+        self,
+        improvement_reward: RewardCalculator,
+        gate_rewards: Dict[str, RewardCalculator],
+        direction_reward: Optional[RewardCalculator] = None,
+        reward_name: Optional[str] = None,
+        improvement_label: str = "improvement",
+        direction_label: str = "direction",
     ):
         """Initialize the gated composite reward.
 
         Args:
-            adaptive_reward: Wirelength+via improvement reward instance.
-            connectivity_reward: Connectivity checker (returns 1 or penalty).
-            graceful_reward: Gracefulness checker (returns 1 or penalty).
-            wirelength_reward: Wirelength-only reward instance for gating.
+            improvement_reward: Primary improvement reward instance (positive is better).
+            gate_rewards: Mapping of gate names to reward instances used for masking.
+            direction_reward: Optional reward that determines sign of the final mask.
+            reward_name: Friendly display name for logging.
+            improvement_label: Label used when logging the improvement component.
+            direction_label: Label used when logging the direction_reward component.
         """
-        self.adaptive_reward = adaptive_reward
-        self.connectivity_reward = connectivity_reward
-        self.graceful_reward = graceful_reward
-        self.wirelength_reward = wirelength_reward
+        self.improvement_reward = improvement_reward
+        self.gate_rewards = gate_rewards
+        self.direction_reward = direction_reward
+        self.improvement_label = improvement_label or "improvement"
+        self.direction_label = direction_label
         self.last_components: List[Dict[str, float]] = []
-        self._reward_name = "GatedCompositeReward"
+        self._reward_name = reward_name or "GatedCompositeReward"
 
     @staticmethod
     def _clamp_positive(value: float) -> float:
@@ -634,46 +858,52 @@ class GatedCompositeReward(RewardCalculator):
             self.last_components = []
             return []
 
-        adaptive_scores = self.adaptive_reward(completions_list, **kwargs)
-        connectivity_scores = self.connectivity_reward(completions_list, **kwargs)
-        graceful_scores = self.graceful_reward(completions_list, **kwargs)
-        wirelength_scores = self.wirelength_reward(completions_list, **kwargs)
+        improvement_scores = self.improvement_reward(completions_list, **kwargs)
+        gate_scores = {
+            name: reward(completions_list, **kwargs)
+            for name, reward in self.gate_rewards.items()
+        }
+        direction_scores = (
+            self.direction_reward(completions_list, **kwargs)
+            if self.direction_reward
+            else None
+        )
 
         rewards: List[float] = []
         components: List[Dict[str, float]] = []
 
-        for adaptive, connectivity, graceful, wirelength in zip(
-            adaptive_scores, connectivity_scores, graceful_scores, wirelength_scores
-        ):
-            adaptive_value = float(adaptive)
-            wirelength_value = float(wirelength)
-            improvement_value = adaptive_value
-            connectivity_mask = self._clamp_positive(connectivity)
-            graceful_mask = self._clamp_positive(graceful)
-            wirelength_mask = 1.0 if wirelength_value > 0.0 else -1.0
-            mask = connectivity_mask * graceful_mask * wirelength_mask
+        for idx, improvement in enumerate(improvement_scores):
+            improvement_value = float(improvement)
+            mask = 1.0
+            component_values: Dict[str, float] = {
+                self.improvement_label: improvement_value,
+                "improvement": improvement_value,
+            }
+
+            for gate_name, scores in gate_scores.items():
+                gate_value = float(scores[idx])
+                gate_mask = self._clamp_positive(gate_value)
+                component_values[gate_name] = gate_value
+                component_values[f"{gate_name}_mask"] = gate_mask
+                mask *= gate_mask
+
+            if direction_scores is not None:
+                direction_value = float(direction_scores[idx])
+                direction_mask = 1.0 if direction_value > 0.0 else -1.0
+                component_values[self.direction_label] = direction_value
+                component_values[f"{self.direction_label}_mask"] = direction_mask
+                mask *= direction_mask
 
             final_reward = (
-                mask * max(adaptive_value, 0.0)
+                mask * max(improvement_value, 0.0)
                 if mask > 0.0
-                else min(adaptive_value, 0.0)
+                else min(improvement_value, 0.0)
             )
 
             rewards.append(final_reward)
-            components.append(
-                {
-                    "adaptive": float(adaptive),
-                    "connectivity": float(connectivity),
-                    "graceful": float(graceful),
-                    "wirelength": float(wirelength),
-                    "connectivity_mask": connectivity_mask,
-                    "graceful_mask": graceful_mask,
-                    "wirelength_mask": wirelength_mask,
-                    "mask": mask,
-                    "improvement": improvement_value,
-                    "final": final_reward,
-                }
-            )
+            component_values["mask"] = mask
+            component_values["final"] = final_reward
+            components.append(component_values)
 
         self.last_components = components
         return rewards
@@ -684,6 +914,7 @@ REWARD_BUILDERS: Dict[str, Callable[..., RewardCalculator]] = {
     "adaptive_wl_via": AdaptiveWirelengthViaReward,
     "connectivity": ConnectivityReward,
     "graceful": GracefulReward,
+    "elmore_delay": ElmoreDelayReward,
 }
 
 
@@ -694,7 +925,8 @@ def create_reward(
 ) -> RewardCalculator:
     """Instantiate a reward calculator by name."""
     key = (name or "wirelength").lower()
-    if key == "gated_composite":
+
+    if key == "gated_wl_composite":
         adaptive_kwargs = kwargs.pop("adaptive_kwargs", {})
         connectivity_kwargs = kwargs.pop("connectivity_kwargs", {})
         graceful_kwargs = kwargs.pop("graceful_kwargs", {})
@@ -706,10 +938,35 @@ def create_reward(
         wirelength = WirelengthReward(tokenizer=tokenizer, **wirelength_kwargs)
 
         return GatedCompositeReward(
-            adaptive_reward=adaptive,
-            connectivity_reward=connectivity,
-            graceful_reward=graceful,
-            wirelength_reward=wirelength,
+            improvement_reward=adaptive,
+            gate_rewards={
+                "connectivity": connectivity,
+                "graceful": graceful,
+            },
+            direction_reward=wirelength,
+            reward_name="GatedWLCompositeReward",
+            improvement_label="adaptive",
+            direction_label="wirelength",
+        )
+
+    if key == "gated_timing_composite":
+        elmore_kwargs = kwargs.pop("elmore_kwargs", {})
+        connectivity_kwargs = kwargs.pop("connectivity_kwargs", {})
+        graceful_kwargs = kwargs.pop("graceful_kwargs", {})
+
+        elmore = ElmoreDelayReward(tokenizer=tokenizer, **elmore_kwargs)
+        connectivity = ConnectivityReward(tokenizer=tokenizer, **connectivity_kwargs)
+        graceful = GracefulReward(tokenizer=tokenizer, **graceful_kwargs)
+
+        return GatedCompositeReward(
+            improvement_reward=elmore,
+            gate_rewards={
+                "connectivity": connectivity,
+                "graceful": graceful,
+            },
+            direction_reward=None,
+            reward_name="GatedTimingCompositeReward",
+            improvement_label="elmore_delay",
         )
 
     if key not in REWARD_BUILDERS:

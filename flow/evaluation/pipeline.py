@@ -15,7 +15,7 @@ import logging
 from collections import Counter, defaultdict
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -476,10 +476,17 @@ class EvaluationPipeline:
 
         wirelength_pred = sum(df["wirelength_pred"])
         wirelength_true = sum(df["wirelength_true"])
+        max_elmore_delay_pred = sum(df["max_elmore_delay_pred"])
+        max_elmore_delay_true = sum(df["max_elmore_delay_true"])
 
         via_ratio = via_pred / via_true if via_true > 0 else 0.0
         wirelength_ratio = (
             wirelength_pred / wirelength_true if wirelength_true > 0 else 0.0
+        )
+        max_elmore_delay_ratio = (
+            max_elmore_delay_pred / max_elmore_delay_true
+            if max_elmore_delay_true > 0
+            else (1.0 if max_elmore_delay_pred == 0 else 0.0)
         )
 
         avg_red_score = df["red_similarity_score"].mean()
@@ -498,9 +505,16 @@ class EvaluationPipeline:
 
         post_via_pred = sum(df["post_num_vias_pred"])
         post_wirelength_pred = sum(df["post_wirelength_pred"])
+        post_max_elmore_delay_pred = sum(df["post_max_elmore_delay_pred"])
+        post_max_elmore_delay_true = sum(df["post_max_elmore_delay_true"])
         post_via_ratio = post_via_pred / via_true if via_true > 0 else 0.0
         post_wirelength_ratio = (
             post_wirelength_pred / wirelength_true if wirelength_true > 0 else 0.0
+        )
+        post_max_elmore_delay_ratio = (
+            post_max_elmore_delay_pred / post_max_elmore_delay_true
+            if post_max_elmore_delay_true > 0
+            else (1.0 if post_max_elmore_delay_pred == 0 else 0.0)
         )
 
         # Log stats
@@ -538,6 +552,9 @@ class EvaluationPipeline:
         logging.info(f"Avg. Edge IoU          : {avg_edge_iou * 100:.2f}%")
         logging.info(f"Via (Pred / GT)        : {via_ratio * 100:.2f}%")
         logging.info(f"Wirelength (Pred / GT) : {wirelength_ratio * 100:.2f}%")
+        logging.info(
+            f"Max Elmore Delay (Pred / GT) : {max_elmore_delay_ratio * 100:.2f}%"
+        )
         logging.info(f"RED Similarity Score : {avg_red_score:.4f}")
 
         print("\n")
@@ -571,6 +588,9 @@ class EvaluationPipeline:
         )
         logging.info(f"Via (Pred* / GT)           : {post_via_ratio * 100:.2f}%")
         logging.info(f"Wirelength (Pred* / GT)    : {post_wirelength_ratio * 100:.2f}%")
+        logging.info(
+            f"Max Elmore Delay (Pred* / GT) : {post_max_elmore_delay_ratio * 100:.2f}%"
+        )
         print("\n")
 
         # Logging demo
@@ -981,12 +1001,133 @@ def calculate_routing_metrics(
         else (1.0 if metrics["wirelength_pred"] == 0 else 0.0)
     )
 
+    pred_delay, true_delay = compute_scaled_elmore_delays(
+        pred_tree, true_tree, relative_loads, tokenizer
+    )
+    metrics["max_elmore_delay_pred"] = pred_delay
+    metrics["max_elmore_delay_true"] = true_delay
+    metrics["max_elmore_delay_ratio"] = (
+        pred_delay / true_delay
+        if true_delay > 0
+        else (1.0 if pred_delay == 0 else 0.0)
+    )
+
     # Calculate RED metrics
     red_metrics = calculate_red_score(pred_tree, true_tree)
 
     metrics.update(red_metrics)
 
     return metrics
+
+
+def calculate_max_elmore_delay(
+    tree: Node,
+    load_coords: Set[CoordinatePoint],
+    db_unit: float = 2000.0,
+    unit_resistance: float = 1.0,
+    unit_capacitance: float = 1.0,
+    load_capacitance: float = 1.0,
+) -> float:
+    """Compute maximum Elmore delay to any sink in a routing tree."""
+    if tree is None or tree.coord is None:
+        return 0.0
+
+    safe_db_unit = db_unit if db_unit and db_unit > 0 else 2000.0
+    subtree_caps: Dict[Node, float] = {}
+
+    def accumulate_capacitance(node: Node) -> float:
+        if node.coord is None:
+            return 0.0
+        total_cap = load_capacitance if node.coord in load_coords else 0.0
+        for child in node.children:
+            if child.coord is None:
+                continue
+            edge_length = abs(node.coord.x - child.coord.x) + abs(
+                node.coord.y - child.coord.y
+            )
+            physical_len = edge_length / safe_db_unit
+            edge_cap = physical_len * unit_capacitance
+            total_cap += edge_cap
+            total_cap += accumulate_capacitance(child)
+        subtree_caps[node] = total_cap
+        return total_cap
+
+    accumulate_capacitance(tree)
+
+    delays: List[float] = []
+
+    def accumulate_delay(node: Node, upstream_delay: float) -> None:
+        if node.coord is None:
+            return
+        for child in node.children:
+            if child.coord is None:
+                continue
+            edge_length = abs(node.coord.x - child.coord.x) + abs(
+                node.coord.y - child.coord.y
+            )
+            physical_len = edge_length / safe_db_unit
+            edge_resistance = physical_len * unit_resistance
+            edge_cap = physical_len * unit_capacitance
+            downstream_cap = subtree_caps.get(child, 0.0) + edge_cap
+            edge_delay = edge_resistance * downstream_cap
+            total_delay = upstream_delay + edge_delay
+            if child.coord in load_coords or not child.children:
+                delays.append(total_delay)
+            accumulate_delay(child, total_delay)
+
+    accumulate_delay(tree, 0.0)
+    return max(delays) if delays else 0.0
+
+
+def _collect_scaled_load_coordinates(
+    loads: List[str],
+    tree: Node,
+    tokenizer: UnifiedTokenizer,
+    scale_factor: float,
+) -> Set[CoordinatePoint]:
+    """Parse and scale loads; fall back to tree leaves if none provided."""
+    load_coords: Set[CoordinatePoint] = set()
+    for relative_load in loads or []:
+        try:
+            coord = tokenizer.parse_coord(relative_load)
+            if scale_factor != 1.0:
+                coord = CoordinatePoint(coord.x, coord.y, int(coord.m * scale_factor))
+            load_coords.add(coord)
+        except Exception as exc:
+            logging.debug("Failed to parse relative load '%s': %s", relative_load, exc)
+
+    if not load_coords:
+        edges = get_edges(tree)
+        if edges:
+            load_coords.update(get_leaves(edges, tree.coord))
+        elif tree.coord:
+            load_coords.add(tree.coord)
+
+    return load_coords
+
+
+def compute_scaled_elmore_delays(
+    pred_tree: Node,
+    true_tree: Node,
+    relative_loads: List[str],
+    tokenizer: UnifiedTokenizer,
+) -> Tuple[float, float]:
+    """Scale trees and loads uniformly, then compute max Elmore delays."""
+    scale_factor = compute_uniform_scale_factor(pred_tree, true_tree)
+    scaled_pred_tree, scaled_true_tree = scale_trees_uniformly(
+        pred_tree, true_tree, scale_factor
+    )
+
+    pred_load_coords = _collect_scaled_load_coordinates(
+        relative_loads, scaled_pred_tree, tokenizer, scale_factor
+    )
+    true_load_coords = _collect_scaled_load_coordinates(
+        relative_loads, scaled_true_tree, tokenizer, scale_factor
+    )
+
+    pred_delay = calculate_max_elmore_delay(scaled_pred_tree, pred_load_coords)
+    true_delay = calculate_max_elmore_delay(scaled_true_tree, true_load_coords)
+    return pred_delay, true_delay
 
 
 def get_edges(tree: Node) -> List[Tuple[CoordinatePoint, CoordinatePoint]]:
@@ -1131,15 +1272,17 @@ def calculate_total_wirelength(root: Node) -> float:
     return total_length
 
 
-def scale_trees_uniformly(pred_tree: Node, gt_tree: Node) -> Tuple[Node, Node]:
+def compute_uniform_scale_factor(pred_tree: Node, gt_tree: Node) -> float:
     """
-    Scale both trees using a unified scaling factor to ensure fairness.
+    Compute a unified scaling factor for a pair of trees.
     """
-    # Collect all coordinates from both trees
     pred_coords = get_all_coords(pred_tree)
     gt_coords = get_all_coords(gt_tree)
     all_coords = pred_coords + gt_coords
-    # Calculate global range
+
+    if not all_coords:
+        return 1.0
+
     max_x = max(c.x for c in all_coords)
     min_x = min(c.x for c in all_coords)
     max_y = max(c.y for c in all_coords)
@@ -1151,25 +1294,37 @@ def scale_trees_uniformly(pred_tree: Node, gt_tree: Node) -> Tuple[Node, Node]:
     delta_y = max_y - min_y
     delta_m = max_m - min_m
 
-    # Use unified scaling factor
-    scale_factor = (delta_x + delta_y) / 2 / delta_m if delta_m != 0 else 1.0
+    return (delta_x + delta_y) / 2 / delta_m if delta_m != 0 else 1.0
 
-    # Scale both trees with the same factor
-    def scale_tree_with_factor(tree: Node, factor: float) -> Node:
-        def copy_and_scale(node: Node) -> Node:
-            if not node.coord:
-                return Node()
-            scaled_m = int(node.coord.m * factor)
-            scaled_node = Node()
-            scaled_node.coord = CoordinatePoint(node.coord.x, node.coord.y, scaled_m)
-            for child in node.children:
-                add_child(scaled_node, copy_and_scale(child))
-            return scaled_node
 
-        return copy_and_scale(tree)
+def scale_tree_with_factor(tree: Node, factor: float) -> Node:
+    """Return a copy of the tree with its layer coordinate scaled by factor."""
 
-    scaled_pred = scale_tree_with_factor(pred_tree, scale_factor)
-    scaled_gt = scale_tree_with_factor(gt_tree, scale_factor)
+    def copy_and_scale(node: Node) -> Node:
+        if not node.coord:
+            return Node()
+        scaled_m = int(node.coord.m * factor)
+        scaled_node = Node()
+        scaled_node.coord = CoordinatePoint(node.coord.x, node.coord.y, scaled_m)
+        for child in node.children:
+            add_child(scaled_node, copy_and_scale(child))
+        return scaled_node
+
+    return copy_and_scale(tree)
+
+
+def scale_trees_uniformly(
+    pred_tree: Node, gt_tree: Node, scale_factor: Optional[float] = None
+) -> Tuple[Node, Node]:
+    """
+    Scale both trees using a unified scaling factor to ensure fairness.
+    """
+    factor = scale_factor
+    if factor is None:
+        factor = compute_uniform_scale_factor(pred_tree, gt_tree)
+
+    scaled_pred = scale_tree_with_factor(pred_tree, factor)
+    scaled_gt = scale_tree_with_factor(gt_tree, factor)
 
     return scaled_pred, scaled_gt
 
@@ -1805,7 +1960,6 @@ def scale_tree_and_loads_for_optimization(
     Returns:
         Tuple of (scaled_tree, scaled_load_strings, scale_factor)
     """
-    return tree, relative_loads, 1.0
     # Parse relative loads to coordinates
     load_coords = [tokenizer.parse_coord(load) for load in relative_loads]
 
