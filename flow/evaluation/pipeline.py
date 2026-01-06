@@ -1007,9 +1007,7 @@ def calculate_routing_metrics(
     metrics["max_elmore_delay_pred"] = pred_delay
     metrics["max_elmore_delay_true"] = true_delay
     metrics["max_elmore_delay_ratio"] = (
-        pred_delay / true_delay
-        if true_delay > 0
-        else (1.0 if pred_delay == 0 else 0.0)
+        pred_delay / true_delay if true_delay > 0 else (1.0 if pred_delay == 0 else 0.0)
     )
 
     # Calculate RED metrics
