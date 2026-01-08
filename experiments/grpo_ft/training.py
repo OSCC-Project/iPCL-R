@@ -72,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--beta",
         type=float,
-        default=0.01,
+        default=0.02,
         help="KL penalty coefficient for GRPO (controls divergence from reference).",
     )
     parser.add_argument(
@@ -84,7 +84,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save-steps",
         type=int,
-        default=200,
+        default=100,
         help="Checkpoint saving interval.",
     )
     parser.add_argument(
@@ -99,12 +99,14 @@ def parse_args() -> argparse.Namespace:
             "elmore_delay",
             "gated_wl_composite",
             "gated_timing_composite",
+            "weighted_timing_composite",
         ],
         help=(
             "Reward type to use. Options: wirelength, adaptive_wl_via, connectivity, "
             "graceful, elmore_delay, gated_wl_composite (wirelength/via improvement gated "
             "by connectivity & graceful), gated_timing_composite (Elmore delay improvement "
-            "gated by connectivity & graceful)."
+            "gated by connectivity & graceful), weighted_timing_composite (weighted sum of "
+            "Elmore delay, connectivity, and graceful)."
         ),
     )
     parser.add_argument(
@@ -116,20 +118,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--composite-weights",
         type=str,
-        default="5.0,1.0,2.0",
-        help="Comma-separated weights for composite reward: adaptive_wl_via,connectivity,graceful (e.g., '1.0,1.0,1.0')",
+        default="0.8,0.1,0.1",
+        help="Comma-separated weights for composite reward: improvement,connectivity,graceful (e.g., '0.8,0.1,0.1')",
     )
     parser.add_argument(
         "--connectivity-penalty",
         type=float,
-        default=-0.5,
-        help="Penalty when connectivity check fails (smaller magnitude to avoid large updates).",
+        default=-1.0,
+        help="Penalty when connectivity check fails.",
     )
     parser.add_argument(
         "--graceful-penalty",
         type=float,
-        default=-0.5,
-        help="Penalty when graceful check fails (smaller magnitude to avoid large updates).",
+        default=-1.0,
+        help="Penalty when graceful check fails.",
     )
     parser.add_argument(
         "--wirelength-failure-penalty",
@@ -164,8 +166,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--elmore-improvement-clip",
         type=float,
-        default=1.0,
+        default=0.5,
         help="Clamp for normalized Elmore delay improvement.",
+    )
+    parser.add_argument(
+        "--elmore-improvement-scale",
+        type=float,
+        default=5.0,
+        help="Scale factor applied to normalized Elmore delay improvement.",
     )
     parser.add_argument(
         "--connectivity-mode",
@@ -173,6 +181,13 @@ def parse_args() -> argparse.Namespace:
         default="binary",
         choices=["binary", "ratio"],
         help="Connectivity scoring mode: 'binary' for pass/fail, 'ratio' for partial credit.",
+    )
+    parser.add_argument(
+        "--graceful-mode",
+        type=str,
+        default="binary",
+        choices=["binary", "ratio"],
+        help="Graceful scoring mode: 'binary' for pass/fail, 'ratio' for partial credit.",
     )
     parser.add_argument(
         "--log-reward-components",
@@ -460,6 +475,16 @@ def main() -> None:
 
     tokenizer_wrapper = load_unified_tokenizer(base_flow_config)
 
+    composite_weights = tuple(
+        float(value.strip())
+        for value in args.composite_weights.split(",")
+        if value.strip()
+    )
+    if len(composite_weights) != 3:
+        raise ValueError(
+            "composite-weights must have three values: improvement,connectivity,graceful."
+        )
+
     # Create reward function based on type
     reward_type = args.reward_type
 
@@ -467,6 +492,7 @@ def main() -> None:
         reward = create_reward(
             reward_type,
             tokenizer_wrapper,
+            composite_weights=composite_weights,
             adaptive_kwargs={
                 "via_weight": args.via_weight,
             },
@@ -476,6 +502,7 @@ def main() -> None:
             },
             graceful_kwargs={
                 "penalty": args.graceful_penalty,
+                "use_continuous": args.graceful_mode == "ratio",
             },
             wirelength_kwargs={
                 "failure_penalty": args.wirelength_failure_penalty,
@@ -496,6 +523,7 @@ def main() -> None:
                 "load_capacitance": args.elmore_load_capacitance,
                 "failure_penalty": args.elmore_failure_penalty,
                 "improvement_clip": args.elmore_improvement_clip,
+                "improvement_scale": args.elmore_improvement_scale,
             },
             connectivity_kwargs={
                 "penalty": args.connectivity_penalty,
@@ -503,11 +531,44 @@ def main() -> None:
             },
             graceful_kwargs={
                 "penalty": args.graceful_penalty,
+                "use_continuous": args.graceful_mode == "ratio",
             },
         )
         logging.info(
-            "Created gated timing composite reward (connectivity_mode=%s, elmore_unit_resistance=%.2f, elmore_unit_capacitance=%.2f, elmore_load_capacitance=%.2f)",
+            "Created gated timing composite reward (connectivity_mode=%s, graceful_mode=%s, elmore_unit_resistance=%.2f, elmore_unit_capacitance=%.2f, elmore_load_capacitance=%.2f)",
             args.connectivity_mode,
+            args.graceful_mode,
+            args.elmore_unit_resistance,
+            args.elmore_unit_capacitance,
+            args.elmore_load_capacitance,
+        )
+    elif reward_type == "weighted_timing_composite":
+        reward = create_reward(
+            reward_type,
+            tokenizer_wrapper,
+            composite_weights=composite_weights,
+            elmore_kwargs={
+                "unit_resistance": args.elmore_unit_resistance,
+                "unit_capacitance": args.elmore_unit_capacitance,
+                "load_capacitance": args.elmore_load_capacitance,
+                "failure_penalty": args.elmore_failure_penalty,
+                "improvement_clip": args.elmore_improvement_clip,
+                "improvement_scale": args.elmore_improvement_scale,
+            },
+            connectivity_kwargs={
+                "penalty": args.connectivity_penalty,
+                "use_continuous": args.connectivity_mode == "ratio",
+            },
+            graceful_kwargs={
+                "penalty": args.graceful_penalty,
+                "use_continuous": args.graceful_mode == "ratio",
+            },
+        )
+        logging.info(
+            "Created weighted timing composite reward (connectivity_mode=%s, graceful_mode=%s, composite_weights=%s, elmore_unit_resistance=%.2f, elmore_unit_capacitance=%.2f, elmore_load_capacitance=%.2f)",
+            args.connectivity_mode,
+            args.graceful_mode,
+            composite_weights,
             args.elmore_unit_resistance,
             args.elmore_unit_capacitance,
             args.elmore_load_capacitance,
@@ -521,6 +582,7 @@ def main() -> None:
             reward_kwargs["use_continuous"] = args.connectivity_mode == "ratio"
         elif reward_type == "graceful":
             reward_kwargs["penalty"] = args.graceful_penalty
+            reward_kwargs["use_continuous"] = args.graceful_mode == "ratio"
         elif reward_type == "adaptive_wl_via":
             reward_kwargs["via_weight"] = args.via_weight
             reward_kwargs["failure_penalty"] = args.wirelength_failure_penalty
@@ -531,6 +593,7 @@ def main() -> None:
                 "load_capacitance": args.elmore_load_capacitance,
                 "failure_penalty": args.elmore_failure_penalty,
                 "improvement_clip": args.elmore_improvement_clip,
+                "improvement_scale": args.elmore_improvement_scale,
             }
 
         reward = create_reward(
